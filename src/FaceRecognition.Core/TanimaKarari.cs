@@ -4,7 +4,8 @@ namespace FaceRecognition.Core;
 /// LBPH tanıyıcısının döndürdüğü mesafeyi kullanıcıya gösterilecek karara çevirir.
 /// LBPH'de mesafe ne kadar küçükse yüz o kadar benzerdir (0 = birebir aynı).
 /// </summary>
-public readonly record struct TanimaKarari(string Etiket, double Mesafe, int GuvenYuzde, bool Taninan)
+/// <param name="EnYakin">Eşik aşılsa bile modelin en çok benzettiği etiket (bilgi amaçlı).</param>
+public readonly record struct TanimaKarari(string Etiket, double Mesafe, int GuvenYuzde, bool Taninan, string? EnYakin = null)
 {
     public const string Bilinmiyor = "Bilinmiyor";
     public const double VarsayilanEsik = 80;
@@ -22,7 +23,7 @@ public readonly record struct TanimaKarari(string Etiket, double Mesafe, int Guv
 
         int guven = (int)Math.Round(Math.Clamp(100 - mesafe, 0, 100));
         bool taninan = tahminEtiketi is not null && mesafe <= esik;
-        return new TanimaKarari(taninan ? tahminEtiketi! : Bilinmiyor, mesafe, guven, taninan);
+        return new TanimaKarari(taninan ? tahminEtiketi! : Bilinmiyor, mesafe, guven, taninan, tahminEtiketi);
     }
 
     public string Metin() => Taninan
