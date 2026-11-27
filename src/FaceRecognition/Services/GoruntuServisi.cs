@@ -74,6 +74,9 @@ public sealed class GoruntuServisi : IDisposable
     /// <summary>YuNet'in bir bölgeyi yüz sayması için gereken en düşük skor (0-1).</summary>
     public float YuNetSkorEsigi { get; set; } = 0.8f;
     public bool ModelHazir { get { lock (_modelKilidi) return _tanici is not null; } }
+
+    /// <summary>Son eğitimde çapraz doğrulamayla hesaplanan kalibrasyon (yetersiz veride null).</summary>
+    public MesafeKalibrasyonu? Kalibrasyon { get; private set; }
     public IReadOnlyCollection<string> ModeldekiEtiketler { get { lock (_modelKilidi) return _etiketAdlari.Values.ToList(); } }
 
     // ------------------------------------------------------------------ Algılama
@@ -203,7 +206,7 @@ public sealed class GoruntuServisi : IDisposable
                 {
                     using var yuz = YuzuHazirla(renkli, bolgeBilgisi);
                     _tanici.Predict(yuz, out int id, out double mesafe);
-                    karar = TanimaKarari.Olustur(_etiketAdlari.GetValueOrDefault(id), mesafe, Esik);
+                    karar = TanimaKarari.Olustur(_etiketAdlari.GetValueOrDefault(id), mesafe, Esik, Kalibrasyon);
                 }
             }
             sonuc.Add(new AlgilananYuz(bolge, karar, bolgeBilgisi));
@@ -321,14 +324,16 @@ public sealed class GoruntuServisi : IDisposable
             if (goruntuler.Count == 0)
                 throw new InvalidOperationException("Okunabilir örnek görüntü bulunamadı.");
 
-            var yeni = LBPHFaceRecognizer.Create(radius: 1, neighbors: 8, gridX: 8, gridY: 8);
+            var yeni = YeniTanici();
             yeni.Train(goruntuler, idler);
+            var kalibrasyon = Kalibre(goruntuler, idler);
 
             lock (_modelKilidi)
             {
                 _tanici?.Dispose();
                 _tanici = yeni;
                 _etiketAdlari = adlar;
+                Kalibrasyon = kalibrasyon;
             }
             return goruntuler.Count;
         }
@@ -338,6 +343,61 @@ public sealed class GoruntuServisi : IDisposable
         }
     }
 
+    private static LBPHFaceRecognizer YeniTanici() => LBPHFaceRecognizer.Create(radius: 1, neighbors: 8, gridX: 8, gridY: 8);
+
+    /// <summary>
+    /// 5 katlı çapraz doğrulama ile gerçek ve sahte mesafe dağılımlarını ölçer.
+    /// Her kişinin örnekleri dosya sırasına göre ardışık 5 parçaya bölünür (aynı örneğin veri artırma kopyaları
+    /// ardışık kaydedildiği için büyük ölçüde aynı parçada kalır, sızıntı azalır):
+    /// <list type="bullet">
+    /// <item>Gerçek: kişinin diğer parçalarıyla eğitilen modelin, dışarıda bırakılan parçaya verdiği mesafe.</item>
+    /// <item>Sahte: yalnızca diğer kişilerle eğitilen modelin bu kişinin örneklerine verdiği en küçük mesafe.</item>
+    /// </list>
+    /// </summary>
+    private static MesafeKalibrasyonu? Kalibre(List<Mat> goruntuler, List<int> idler)
+    {
+        const int Kat = 5;
+        var etiketler = idler.Distinct().ToList();
+        if (etiketler.Count < 2)
+            return null;
+
+        var gercek = new List<double>();
+        var sahte = new List<double>();
+        foreach (int etiket in etiketler)
+        {
+            var kendi = Enumerable.Range(0, idler.Count).Where(i => idler[i] == etiket).ToList();
+            var diger = Enumerable.Range(0, idler.Count).Where(i => idler[i] != etiket).ToList();
+            if (kendi.Count < Kat || diger.Count == 0)
+                continue;
+
+            using (var sahteModel = YeniTanici())
+            {
+                sahteModel.Train(diger.Select(i => goruntuler[i]), diger.Select(i => idler[i]));
+                foreach (int i in kendi.Where((_, k) => k % 2 == 0))   // örneklerin yarısı yeterli
+                {
+                    sahteModel.Predict(goruntuler[i], out _, out double d);
+                    sahte.Add(d);
+                }
+            }
+
+            for (int kat = 0; kat < Kat; kat++)
+            {
+                int bas = kat * kendi.Count / Kat, son = (kat + 1) * kendi.Count / Kat;
+                var test = kendi.Skip(bas).Take(son - bas).ToList();
+                var egitim = kendi.Take(bas).Concat(kendi.Skip(son)).ToList();
+                if (test.Count == 0 || egitim.Count == 0) continue;
+                using var gercekModel = YeniTanici();
+                gercekModel.Train(egitim.Select(i => goruntuler[i]), egitim.Select(i => idler[i]));
+                foreach (int i in test)
+                {
+                    gercekModel.Predict(goruntuler[i], out _, out double d);
+                    gercek.Add(d);
+                }
+            }
+        }
+        return MesafeKalibrasyonu.Olustur(gercek, sahte);
+    }
+
     public void ModeliSifirla()
     {
         lock (_modelKilidi)
@@ -345,6 +405,7 @@ public sealed class GoruntuServisi : IDisposable
             _tanici?.Dispose();
             _tanici = null;
             _etiketAdlari = new();
+            Kalibrasyon = null;
         }
     }
 

@@ -98,6 +98,28 @@ Test("Örnek deposu: etiket silinir", () =>
 
 try { Directory.Delete(kok, true); } catch { /* önemsiz */ }
 
+Test("Kalibrasyon: iyi ayrışan dağılımlarda eşik aradadır, güven eşikte %50", () =>
+{
+    double[] gercek = { 30, 35, 38, 40, 42, 45, 48, 50 };
+    double[] sahte = { 70, 75, 80, 82, 85, 90, 95, 100 };
+    var k = MesafeKalibrasyonu.Olustur(gercek, sahte) ?? throw new Exception("Kalibrasyon üretilmeli");
+    Dogrula(k.Esik > 50 && k.Esik < 70, $"Eşik 50-70 arasında olmalı, {k.Esik}");
+    Dogrula(k.YanlisKabulOrani == 0 && k.YanlisRetOrani == 0, "Ayrışan dağılımlarda hata 0 olmalı");
+    Dogrula(k.GuvenYuzde(k.Esik) == 50, "Eşikte güven %50 olmalı");
+    Dogrula(k.GuvenYuzde(41) >= 90 && k.GuvenYuzde(95) <= 5, $"Gerçek bölgede yüksek, sahte bölgede düşük güven: {k.GuvenYuzde(41)} / {k.GuvenYuzde(95)}");
+});
+
+Test("Kalibrasyon: çakışan dağılımlarda toplam hatayı en aza indirir; az veride üretilmez", () =>
+{
+    double[] gercek = { 40, 50, 55, 60, 65, 70, 90 };
+    double[] sahte = { 58, 75, 80, 85, 90, 95, 100 };
+    var k = MesafeKalibrasyonu.Olustur(gercek, sahte)!;
+    Dogrula(k.YanlisKabulOrani + k.YanlisRetOrani <= 2.0 / 7 + 1e-9, $"Toplam hata en fazla 2/7 olmalı: {k.Ozet()}");
+    Dogrula(MesafeKalibrasyonu.Olustur(new double[] { 1, 2 }, sahte) is null, "3'ten az gerçek ölçümde null");
+    var karar = TanimaKarari.Olustur("Ali", 45, k.Esik, k);
+    Dogrula(karar.Taninan && karar.GuvenYuzde == k.GuvenYuzde(45), "TanimaKarari kalibre güveni kullanmalı");
+});
+
 Test("Yüz hizalama: eğik gözler yatay hâle gelir ve sabit noktalara oturur", () =>
 {
     // Sol göz (100,120), sağ göz (160,140): göz çizgisi ~18,4° eğik, mesafe ~63,2 px

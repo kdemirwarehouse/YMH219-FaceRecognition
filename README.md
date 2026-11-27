@@ -46,7 +46,7 @@ dotnet run --project src/FaceRecognition
 
 Visual Studio ile: `FaceRecognition.sln` → başlangıç projesi `FaceRecognition` → **F5**. NuGet paketleri ilk derlemede otomatik indirilir.
 
-**Testler:** `dotnet run --project tests/FaceRecognition.Tests` (11 test)
+**Testler:** `dotnet run --project tests/FaceRecognition.Tests` (13 test)
 
 ### Kullanım (en az iki etiketle tanıma)
 
@@ -69,6 +69,11 @@ model otomatik yeniden eğitilir. Örnek yüzler kişisel veri olduğu için **d
 - LBPH ile tanıma: tahmin edilen **etiket**, **güven skoru** ve LBPH **mesafesi** gösterilir
 - Görüntü üzerindeki etiketler **GDI+ (Segoe UI)** ile çizilir; OpenCV'nin ASCII yazı tipinin aksine Türkçe karakterler
   korunur ("Ayşe", "Çağrı", "Gülşen")
+- **Kalibre güven skoru ve otomatik eşik:** model eğitilirken örnekler üzerinde 5 katlı çapraz doğrulama yapılır;
+  her kişi için *gerçek* (kendi diğer örneklerine) ve *sahte* (en yakın başka kişiye) LBPH mesafeleri ölçülür. Yanlış kabul +
+  yanlış ret oranını en aza indiren mesafe **önerilen eşik** olarak otomatik ayarlanır, güven yüzdesi de bu eşik etrafında
+  lojistik eğriyle hesaplanır (eşikte %50; eğri gerçek ve sahte dağılımların medyanları arasında ~%95'ten ~%5'e iner). Durum çubuğunda ölçülen FAR/FRR görünür.
+  (En az 2 kişi ve kişi başı 5+ örnek gerekir; yoksa eski `100 − mesafe` ölçeği kullanılır.)
 - Ayarlanabilir **tanıma eşiği**: mesafe eşikten büyükse "Bilinmiyor" (ve en yakın etiket bilgi olarak)
 - **Basit eğitim / veri ekleme ekranı**: etiket yazıp örnek ekleme, etiket listesi ve örnek sayıları, etiket silme, örnek klasörünü açma
 - **Yüz hizalama (YuNet göz noktalarıyla):** her yüz, iki göz yatay olacak şekilde döndürülür, gözler arası mesafe
@@ -92,6 +97,7 @@ YMH219-FaceRecognition/
 │   ├── FaceRecognition.Core/        OpenCV'den bağımsız, test edilebilir mantık
 │   │   ├── EtiketKurallari.cs       Etiket (kişi adı) doğrulama
 │   │   ├── TanimaKarari.cs          Mesafe + eşik → etiket / Bilinmiyor, güven yüzdesi
+│   │   ├── MesafeKalibrasyonu.cs    Gerçek/sahte mesafe dağılımından eşik ve lojistik güven
 │   │   ├── YuzHizalama.cs           Göz noktalarından döndürme/ölçek/öteleme geometrisi
 │   │   └── OrnekDeposu.cs           ornekler/<etiket>/001.png klasör yönetimi, etiket Id'leri
 │   └── FaceRecognition/
@@ -118,7 +124,6 @@ gizli görüntü toplama veya kişileri uzaktan izleme amacıyla kullanılmamal�
 - LBPH, derin öğrenme tabanlı yüz tanıyıcılar kadar güçlü değildir: hizalama ve otomatik örnek toplamaya rağmen aynı
   kişinin yıllar arayla çekilmiş, çok farklı ışık/renk koşulundaki fotoğraflarında mesafe büyüyebilir. Eşik düşük
   tutulduğu için sistem emin olmadığında yanlış isim vermek yerine "Bilinmiyor" der.
-- Güven yüzdesi (`100 − mesafe`) gösterim amaçlı basit bir ölçektir, olasılık değildir.
 
 ## Üçüncü Taraf Bileşenler
 

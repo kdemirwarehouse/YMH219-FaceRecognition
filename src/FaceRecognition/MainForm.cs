@@ -363,7 +363,15 @@ public partial class MainForm : Form
             Cursor = Cursors.WaitCursor;
             int adet = _goruntu.Egit(_depo);
             lblModel.Text = $"Model: {_goruntu.ModeldekiEtiketler.Count} etiket, {adet} örnek";
-            lblDurum.Text = "Model eğitildi. Kamera veya görüntü ile tanıma yapılabilir.";
+            if (_goruntu.Kalibrasyon is MesafeKalibrasyonu k)
+            {
+                // Önerilen eşik çapraz doğrulamadan gelir; kullanıcı yine elle değiştirebilir
+                nudEsik.Value = Math.Clamp((decimal)Math.Round(k.Esik), nudEsik.Minimum, nudEsik.Maximum);
+                lblDurum.Text = $"Model eğitildi ve kalibre edildi: {k.Ozet()}. Eşik otomatik ayarlandı.";
+                lblModel.Text += $" · kalibre eşik {k.Esik:0}";
+            }
+            else
+                lblDurum.Text = "Model eğitildi. (Kalibrasyon için en az 2 kişi ve kişi başı 5+ örnek gerekir.)";
         }
         catch (Exception ex) when (ex is InvalidOperationException or OpenCVException)
         {
