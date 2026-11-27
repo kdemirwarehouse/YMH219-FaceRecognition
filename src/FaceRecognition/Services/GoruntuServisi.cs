@@ -9,6 +9,18 @@ namespace FaceRecognition.Services;
 /// <summary>Bir karede bulunan yüz ve (model eğitilmişse) tanıma kararı.</summary>
 public sealed record AlgilananYuz(Rect Bolge, TanimaKarari? Karar);
 
+/// <summary>Algılayıcının bulduğu yüz bölgesi; YuNet ayrıca göz konumlarını ve güven skorunu verir.</summary>
+public sealed record YuzBolgesi(Rect Bolge, Point2f? GoruntudeSolGoz = null, Point2f? GoruntudeSagGoz = null, float Skor = 1f);
+
+/// <summary>Kullanılan yüz algılama yöntemi.</summary>
+public enum AlgilayiciTuru
+{
+    /// <summary>OpenCV DNN tabanlı YuNet: eğik/yarı profil yüzlerde ve karmaşık arka planda daha başarılı, göz noktaları verir.</summary>
+    YuNet,
+    /// <summary>Klasik Haar Cascade: hızlı, önden bakan yüzlerde iyi.</summary>
+    Haar
+}
+
 /// <summary>
 /// OpenCV ile yüz algılama (Haar Cascade) ve yüz tanıma (LBPH) işlemlerini yürütür.
 /// Arayüzden bağımsızdır; form yalnızca Mat verir ve sonuçları çizer.
@@ -19,13 +31,20 @@ public sealed class GoruntuServisi : IDisposable
     public static readonly Size YuzBoyutu = new(100, 100);
 
     private readonly CascadeClassifier _algilayici;
+    private readonly string? _yunetYolu;
+    private readonly object _yunetKilidi = new();
+    private FaceDetectorYN? _yunet;
+    private Size _yunetBoyutu;
+    private const int YuNetEnBuyukKenar = 640;   // büyük fotoğraflar bu boyuta küçültülerek işlenir
     private readonly object _modelKilidi = new();
     private LBPHFaceRecognizer? _tanici;
     private Dictionary<int, string> _etiketAdlari = new();
 
     /// <summary>Model dosyası bulunamazsa veya bozuksa FileNotFoundException / InvalidDataException fırlatır.</summary>
-    public GoruntuServisi(string cascadeYolu)
+    public GoruntuServisi(string cascadeYolu, string? yunetYolu = null)
     {
+        _yunetYolu = yunetYolu is not null && File.Exists(yunetYolu) ? yunetYolu : null;
+        Algilayici = _yunetYolu is null ? AlgilayiciTuru.Haar : AlgilayiciTuru.YuNet;
         if (!File.Exists(cascadeYolu))
             throw new FileNotFoundException(
                 "Yüz algılama modeli bulunamadı. 'Models\\haarcascade_frontalface_default.xml' dosyası uygulama klasöründe olmalı.",
@@ -40,13 +59,82 @@ public sealed class GoruntuServisi : IDisposable
     }
 
     public double Esik { get; set; } = TanimaKarari.VarsayilanEsik;
+
+    /// <summary>YuNet model dosyası bulunduysa true.</summary>
+    public bool YuNetKullanilabilir => _yunetYolu is not null;
+
+    /// <summary>Etkin algılayıcı. YuNet modeli yoksa her zaman Haar kullanılır.</summary>
+    public AlgilayiciTuru Algilayici
+    {
+        get => _algilayiciTuru;
+        set => _algilayiciTuru = value == AlgilayiciTuru.YuNet && _yunetYolu is null ? AlgilayiciTuru.Haar : value;
+    }
+    private AlgilayiciTuru _algilayiciTuru;
+
+    /// <summary>YuNet'in bir bölgeyi yüz sayması için gereken en düşük skor (0-1).</summary>
+    public float YuNetSkorEsigi { get; set; } = 0.8f;
     public bool ModelHazir { get { lock (_modelKilidi) return _tanici is not null; } }
     public IReadOnlyCollection<string> ModeldekiEtiketler { get { lock (_modelKilidi) return _etiketAdlari.Values.ToList(); } }
 
     // ------------------------------------------------------------------ Algılama
 
     /// <summary>Renkli görüntüdeki tüm yüzleri bulur (birden fazla yüz desteklenir).</summary>
-    public Rect[] YuzleriBul(Mat renkli)
+    public Rect[] YuzleriBul(Mat renkli) => YuzBolgeleriniBul(renkli).Select(y => y.Bolge).ToArray();
+
+    /// <summary>Seçili algılayıcıyla yüz bölgelerini (YuNet'te göz noktalarıyla) bulur.</summary>
+    public List<YuzBolgesi> YuzBolgeleriniBul(Mat renkli)
+    {
+        if (Algilayici == AlgilayiciTuru.YuNet)
+        {
+            try { return YuNetIleBul(renkli); }
+            catch (OpenCVException) { _algilayiciTuru = AlgilayiciTuru.Haar; }   // DNN çalışmazsa Haar'a düş
+        }
+        return HaarIleBul(renkli).Select(r => new YuzBolgesi(r)).ToList();
+    }
+
+    /// <summary>
+    /// YuNet (OpenCV FaceDetectorYN): her satır x, y, w, h, sağ göz, sol göz, burun, ağız sağ/sol (x, y) ve skor içerir.
+    /// Görüntü en fazla 640 px'e küçültülür, sonuçlar orijinal ölçeğe geri çevrilir.
+    /// </summary>
+    private List<YuzBolgesi> YuNetIleBul(Mat renkli)
+    {
+        double olcek = Math.Min(1.0, (double)YuNetEnBuyukKenar / Math.Max(renkli.Width, renkli.Height));
+        var boyut = new Size((int)Math.Round(renkli.Width * olcek), (int)Math.Round(renkli.Height * olcek));
+        using var bgr = new Mat();
+        if (renkli.Channels() == 1) Cv2.CvtColor(renkli, bgr, ColorConversionCodes.GRAY2BGR);
+        else if (renkli.Channels() == 4) Cv2.CvtColor(renkli, bgr, ColorConversionCodes.BGRA2BGR);
+        else renkli.CopyTo(bgr);
+        using var girdi = new Mat();
+        Cv2.Resize(bgr, girdi, boyut, interpolation: InterpolationFlags.Area);
+
+        var sonuc = new List<YuzBolgesi>();
+        using var yuzler = new Mat();
+        lock (_yunetKilidi)
+        {
+            if (_yunet is null || _yunetBoyutu != boyut)
+            {
+                _yunet?.Dispose();
+                _yunet = FaceDetectorYN.Create(_yunetYolu!, "", boyut, YuNetSkorEsigi, 0.3f, 5000);
+                _yunetBoyutu = boyut;
+            }
+            _yunet.Detect(girdi, yuzler);
+        }
+
+        var tam = new Rect(0, 0, renkli.Width, renkli.Height);
+        for (int i = 0; i < yuzler.Rows; i++)
+        {
+            float V(int j) => yuzler.At<float>(i, j) / (float)olcek;
+            float skor = yuzler.At<float>(i, 14);
+            if (skor < YuNetSkorEsigi) continue;
+            var bolge = new Rect((int)V(0), (int)V(1), (int)V(2), (int)V(3)).Intersect(tam);
+            if (bolge.Width < 20 || bolge.Height < 20) continue;
+            // YuNet "sağ göz" kişinin sağ gözüdür, yani görüntünün solunda kalır
+            sonuc.Add(new YuzBolgesi(bolge, new Point2f(V(4), V(5)), new Point2f(V(6), V(7)), skor));
+        }
+        return sonuc;
+    }
+
+    private Rect[] HaarIleBul(Mat renkli)
     {
         using var gri = GriyeCevir(renkli);
         Cv2.EqualizeHist(gri, gri);
@@ -242,5 +330,6 @@ public sealed class GoruntuServisi : IDisposable
     {
         ModeliSifirla();
         _algilayici.Dispose();
+        lock (_yunetKilidi) _yunet?.Dispose();
     }
 }

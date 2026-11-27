@@ -38,9 +38,11 @@ public partial class MainForm : Form
     private void MainForm_Load(object? sender, EventArgs e)
     {
         string cascade = Path.Combine(AppContext.BaseDirectory, "Models", "haarcascade_frontalface_default.xml");
+        string yunet = Path.Combine(AppContext.BaseDirectory, "Models", "face_detection_yunet_2023mar.onnx");
         try
         {
-            _goruntu = new GoruntuServisi(cascade) { Esik = (double)nudEsik.Value };
+            _goruntu = new GoruntuServisi(cascade, yunet) { Esik = (double)nudEsik.Value };
+            AlgilayiciSeciminiKur();
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or OpenCVException or TypeInitializationException or DllNotFoundException)
         {
@@ -53,6 +55,36 @@ public partial class MainForm : Form
         EtiketListesiniYenile();
         if (_depo.EgitimHatasi() is null)
             ModeliEgit(sessiz: true); // önceki oturumdan kalan örneklerle otomatik eğit
+    }
+
+    // ------------------------------------------------------------ Algılayıcı seçimi
+
+    private readonly ComboBox cmbAlgilayici = new() { DropDownStyle = ComboBoxStyle.DropDownList, Name = "cmbAlgilayici" };
+
+    private void AlgilayiciSeciminiKur()
+    {
+        grpKaynak.Height += 34;
+        var lbl = new Label { Text = "Algılayıcı:", AutoSize = true, Location = new System.Drawing.Point(10, 103) };
+        cmbAlgilayici.Location = new System.Drawing.Point(80, 99);
+        cmbAlgilayici.Width = 194;
+        cmbAlgilayici.Items.AddRange(new object[] { "YuNet (DNN, önerilen)", "Haar Cascade (klasik)" });
+        cmbAlgilayici.SelectedIndex = _goruntu!.Algilayici == AlgilayiciTuru.YuNet ? 0 : 1;
+        cmbAlgilayici.Enabled = _goruntu.YuNetKullanilabilir;
+        cmbAlgilayici.SelectedIndexChanged += (_, _) =>
+        {
+            _goruntu.Algilayici = cmbAlgilayici.SelectedIndex == 0 ? AlgilayiciTuru.YuNet : AlgilayiciTuru.Haar;
+            lblDurum.Text = $"Yüz algılayıcı: {cmbAlgilayici.SelectedItem}";
+            if (_sonKare is not null && !_kamera.Calisiyor)
+            {
+                using var kopya = _sonKare.Clone();
+                _kareIsleniyor = true;
+                KareyiIsleVeGoster(kopya);   // açık fotoğrafı yeni algılayıcıyla yeniden işle
+            }
+        };
+        grpKaynak.Controls.Add(lbl);
+        grpKaynak.Controls.Add(cmbAlgilayici);
+        if (!_goruntu.YuNetKullanilabilir)
+            lblDurum.Text = "YuNet modeli bulunamadı; Haar Cascade kullanılıyor.";
     }
 
     // ------------------------------------------------------------ Görüntü kaynağı

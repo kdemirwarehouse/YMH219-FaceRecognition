@@ -1,7 +1,7 @@
 # YMH219-FaceRecognition — OpenCV ile Yüz Algılama ve Tanıma
 
 OpenCvSharp4 kullanan bir Windows Forms uygulaması. Kameradan veya seçilen görüntü dosyasından alınan karede
-yüzleri **Haar Cascade** ile algılar, dikdörtgenle işaretler ve kullanıcının oluşturduğu küçük yerel örnek kümesiyle
+yüzleri **YuNet (OpenCV DNN)** veya **Haar Cascade** ile algılar, dikdörtgenle işaretler ve kullanıcının oluşturduğu küçük yerel örnek kümesiyle
 eğitilen **LBPH** modeliyle kişiyi etiketler. Tahmin edilen etiket ve güven skoru arayüzde gösterilir.
 Nesne Tabanlı Programlama (YMH 219) dersi ek uygulama ödevidir.
 
@@ -30,7 +30,9 @@ Bu, az örnekle çalışan LBPH yönteminin gerçek davranışını gösterir (b
   - `OpenCvSharp4` — OpenCV'nin .NET sarmalayıcısı (`Mat`, `CascadeClassifier`, `VideoCapture`, `OpenCvSharp.Face.LBPHFaceRecognizer`)
   - `OpenCvSharp4.runtime.win` — Windows için yerel OpenCV kütüphaneleri (contrib/face modülü dahil)
   - `OpenCvSharp4.Extensions` — `Mat` → `Bitmap` dönüşümü (PictureBox için)
-- **Model:** `src/FaceRecognition/Models/haarcascade_frontalface_default.xml` (OpenCV ile dağıtılan önceden eğitilmiş yüz algılayıcı)
+- **Modeller:** `src/FaceRecognition/Models/`
+  - `face_detection_yunet_2023mar.onnx` — YuNet DNN yüz algılayıcı (OpenCV Zoo)
+  - `haarcascade_frontalface_default.xml` — OpenCV ile dağıtılan klasik Haar yüz algılayıcı
 
 ## Kurulum ve Çalıştırma
 
@@ -60,7 +62,10 @@ model otomatik yeniden eğitilir. Örnek yüzler kişisel veri olduğu için **d
 ## Temel Özellikler
 
 - **Kamera Başlat / Durdur** (arka plan görevinde kare okuma, arayüz donmaz) ve **Görüntü Seç** (jpg/png/bmp)
-- Haar Cascade ile yüz algılama; **aynı karede birden fazla yüz** işaretlenir
+- **İki yüz algılayıcı:** varsayılan **YuNet** (OpenCV DNN, `FaceDetectorYN`, 232 KB ONNX modeli) eğik, yarı profil,
+  kısmen gölgeli yüzlerde ve karmaşık arka planlarda Haar'dan belirgin şekilde başarılıdır, ayrıca göz/burun/ağız noktalarını
+  verir; klasik **Haar Cascade** da seçilebilir. YuNet modeli yüklenemezse uygulama otomatik olarak Haar'a geçer.
+  **Aynı karede birden fazla yüz** işaretlenir
 - LBPH ile tanıma: tahmin edilen **etiket**, **güven skoru** ve LBPH **mesafesi** gösterilir
 - Görüntü üzerindeki etiketler **GDI+ (Segoe UI)** ile çizilir; OpenCV'nin ASCII yazı tipinin aksine Türkçe karakterler
   korunur ("Ayşe", "Çağrı", "Gülşen")
@@ -82,8 +87,9 @@ YMH219-FaceRecognition/
 │   │   ├── TanimaKarari.cs          Mesafe + eşik → etiket / Bilinmiyor, güven yüzdesi
 │   │   └── OrnekDeposu.cs           ornekler/<etiket>/001.png klasör yönetimi, etiket Id'leri
 │   └── FaceRecognition/
-│       ├── Services/GoruntuServisi.cs  Haar algılama, yüz hazırlama, veri artırma, LBPH eğitim/tahmin, çizim
+│       ├── Services/GoruntuServisi.cs  YuNet / Haar algılama, yüz hazırlama, veri artırma, LBPH eğitim/tahmin, çizim
 │       ├── Services/KameraServisi.cs   VideoCapture ile arka planda kare okuma
+│       ├── Models/face_detection_yunet_2023mar.onnx  YuNet DNN algılayıcı
 │       ├── Models/haarcascade_frontalface_default.xml
 │       ├── MainForm.cs / MainForm.Designer.cs
 │       └── Program.cs               --ornekler / --resim parametreleri
@@ -104,12 +110,11 @@ gizli görüntü toplama veya kişileri uzaktan izleme amacıyla kullanılmamal�
 - **LBPH az örnekle sınırlıdır.** Aynı kişinin çok farklı ışık/yaş/renk koşulundaki fotoğrafında mesafe büyür ve sonuç
   "Bilinmiyor" olur (2. ekran görüntüsü). Kişi başına kameradan farklı açılarla 10+ örnek eklemek doğruluğu belirgin artırır.
   Eşik düşük tutulduğu için sistem emin olmadığında yanlış isim vermek yerine "Bilinmiyor" der.
-- **Haar Cascade** önden bakan yüzlerde iyi çalışır; profil yüzleri kaçırabilir, karmaşık desenli arka planlarda nadiren
-  yanlış pozitif üretebilir. Daha iyi sonuç için OpenCV DNN (YuNet) yüz algılayıcısı kullanılabilir.
 - Güven yüzdesi (`100 − mesafe`) gösterim amaçlı basit bir ölçektir, olasılık değildir.
 
 ## Üçüncü Taraf Bileşenler
 
 - OpenCV ve OpenCvSharp — Apache 2.0 lisansı
 - `haarcascade_frontalface_default.xml` — Intel License Agreement (dosya başlığında), OpenCV deposundan
+- `face_detection_yunet_2023mar.onnx` — MIT lisansı (Shiqi Yu), [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
 - Ekran görüntülerindeki fotoğraflar — NASA, kamu malı (public domain); depoya eklenmemiştir
