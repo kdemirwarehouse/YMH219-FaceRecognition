@@ -43,6 +43,7 @@ public partial class MainForm : Form
         {
             _goruntu = new GoruntuServisi(cascade, yunet) { Esik = (double)nudEsik.Value };
             AlgilayiciSeciminiKur();
+            OtomatikToplamaKur();
         }
         catch (Exception ex) when (ex is FileNotFoundException or InvalidDataException or OpenCVException or TypeInitializationException or DllNotFoundException)
         {
@@ -254,7 +255,9 @@ public partial class MainForm : Form
             var enBuyuk = yuzler.OrderByDescending(y => y.Bolge.Width * y.Bolge.Height).First();
             try
             {
-                using var hazir = GoruntuServisi.YuzuHazirla(kare, enBuyuk.Bolge);
+                using var hazir = enBuyuk.Kaynak is YuzBolgesi kaynak
+                    ? GoruntuServisi.YuzuHazirla(kare, kaynak)       // göz noktalarıyla hizalı
+                    : GoruntuServisi.YuzuHazirla(kare, enBuyuk.Bolge);
                 int adet = GoruntuServisi.OrnekKaydet(_depo, txtEtiket.Text, hazir, chkVeriArtirma.Checked);
                 lblDurum.Text = $"'{txtEtiket.Text.Trim()}' etiketine {adet} örnek eklendi. Tanıma için 'Modeli Eğit'e basın.";
             }
@@ -264,6 +267,89 @@ public partial class MainForm : Form
             }
         }
         EtiketListesiniYenile();
+    }
+
+    // ------------------------------------------------------------ Otomatik örnek toplama
+
+    private readonly System.Windows.Forms.Timer _toplamaZamanlayici = new() { Interval = 400 };
+    private Button btnOtomatikTopla = null!;
+    private int _toplanacak, _toplanan;
+    private const int OtomatikOrnekSayisi = 10;
+
+    /// <summary>
+    /// Kamera açıkken 0,4 sn arayla 10 örnek toplar (karede tam bir yüz varken). Kullanıcı bu sırada başını
+    /// hafifçe çevirip ifadesini değiştirdiğinde LBPH farklı görünümleri öğrenir; az örnek sorunu büyük ölçüde azalır.
+    /// </summary>
+    private void OtomatikToplamaKur()
+    {
+        btnOrnekEkle.Width = 170;
+        btnOtomatikTopla = new Button
+        {
+            Name = "btnOtomatikTopla", Text = $"Otomatik ×{OtomatikOrnekSayisi}",
+            Location = new System.Drawing.Point(btnOrnekEkle.Right + 6, btnOrnekEkle.Top),
+            Size = new System.Drawing.Size(274 - btnOrnekEkle.Right - 6 + 10 - 10, btnOrnekEkle.Height)
+        };
+        btnOtomatikTopla.Click += BtnOtomatikTopla_Click;
+        grpEgitim.Controls.Add(btnOtomatikTopla);
+        _toplamaZamanlayici.Tick += (_, _) => OtomatikOrnekAl();
+    }
+
+    private void BtnOtomatikTopla_Click(object? sender, EventArgs e)
+    {
+        if (_toplamaZamanlayici.Enabled) { OtomatikToplamayiBitir("Otomatik toplama durduruldu."); return; }
+        string? hata = EtiketKurallari.Hata(txtEtiket.Text);
+        if (hata is not null) { MessageBox.Show(this, hata, "Geçersiz etiket", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (!_kamera.Calisiyor)
+        {
+            MessageBox.Show(this, "Otomatik toplama için önce kamerayı başlatın.", "Kamera kapalı", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        _toplanacak = OtomatikOrnekSayisi;
+        _toplanan = 0;
+        btnOtomatikTopla.Text = "Durdur";
+        lblDurum.Text = "Otomatik toplama: başınızı hafifçe sağa-sola çevirin, ifadenizi değiştirin...";
+        _toplamaZamanlayici.Start();
+    }
+
+    private void OtomatikOrnekAl()
+    {
+        Mat? kare; List<AlgilananYuz> yuzler;
+        lock (_kareKilidi) { kare = _sonKare?.Clone(); yuzler = _sonYuzler; }
+        using (kare)
+        {
+            if (kare is null || yuzler.Count != 1)
+            {
+                lblDurum.Text = $"Otomatik toplama: karede tam olarak bir yüz olmalı ({_toplanan}/{_toplanacak})";
+                return;
+            }
+            try
+            {
+                var y = yuzler[0];
+                using var hazir = y.Kaynak is YuzBolgesi k ? GoruntuServisi.YuzuHazirla(kare, k) : GoruntuServisi.YuzuHazirla(kare, y.Bolge);
+                // Veri artırma her 3 örnekte bir: hem çeşitlilik hem makul dosya sayısı
+                GoruntuServisi.OrnekKaydet(_depo, txtEtiket.Text, hazir, chkVeriArtirma.Checked && _toplanan % 3 == 0);
+                _toplanan++;
+                lblDurum.Text = $"Otomatik toplama: {_toplanan}/{_toplanacak} örnek";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OpenCVException)
+            {
+                OtomatikToplamayiBitir("Örnek kaydedilemedi: " + ex.Message);
+                return;
+            }
+        }
+        if (_toplanan >= _toplanacak)
+        {
+            OtomatikToplamayiBitir($"'{txtEtiket.Text.Trim()}' için {_toplanan} örnek toplandı; model yeniden eğitiliyor...");
+            if (_depo.EgitimHatasi() is null) ModeliEgit(sessiz: true);
+        }
+    }
+
+    private void OtomatikToplamayiBitir(string mesaj)
+    {
+        _toplamaZamanlayici.Stop();
+        btnOtomatikTopla.Text = $"Otomatik ×{OtomatikOrnekSayisi}";
+        EtiketListesiniYenile();
+        lblDurum.Text = mesaj;
     }
 
     private void BtnEgit_Click(object? sender, EventArgs e) => ModeliEgit(sessiz: false);

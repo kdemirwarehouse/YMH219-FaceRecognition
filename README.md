@@ -46,7 +46,7 @@ dotnet run --project src/FaceRecognition
 
 Visual Studio ile: `FaceRecognition.sln` → başlangıç projesi `FaceRecognition` → **F5**. NuGet paketleri ilk derlemede otomatik indirilir.
 
-**Testler:** `dotnet run --project tests/FaceRecognition.Tests` (9 test)
+**Testler:** `dotnet run --project tests/FaceRecognition.Tests` (11 test)
 
 ### Kullanım (en az iki etiketle tanıma)
 
@@ -71,6 +71,13 @@ model otomatik yeniden eğitilir. Örnek yüzler kişisel veri olduğu için **d
   korunur ("Ayşe", "Çağrı", "Gülşen")
 - Ayarlanabilir **tanıma eşiği**: mesafe eşikten büyükse "Bilinmiyor" (ve en yakın etiket bilgi olarak)
 - **Basit eğitim / veri ekleme ekranı**: etiket yazıp örnek ekleme, etiket listesi ve örnek sayıları, etiket silme, örnek klasörünü açma
+- **Yüz hizalama (YuNet göz noktalarıyla):** her yüz, iki göz yatay olacak şekilde döndürülür, gözler arası mesafe
+  sabitlenir ve gözler 100x100 görüntüde hep aynı noktaya (%30/%70 genişlik, %36 yükseklik) gelir; eğik baş pozlarında
+  LBPH mesafesi belirgin şekilde düşer
+- **CLAHE** (yerel kontrast eşitleme): global histogram eşitlemeye göre yandan gelen ışıkta daha kararlı
+- **Otomatik örnek toplama (Otomatik ×10):** kamera açıkken 0,4 sn arayla 10 örnek alınır (karede tam bir yüz varken),
+  bittiğinde model kendiliğinden yeniden eğitilir — kullanıcı bu sırada başını hafifçe çevirerek farklı görünümler verir.
+  *Not: Bu sürümden önce eklenen örnekler hizalanmadan kaydedildiği için silinip yeniden eklenmeleri önerilir.*
 - **Veri artırma**: her örnekten ayna, aydınlık/karanlık ve ±8° döndürülmüş kopyalar üretilir (1 örnek → 6 görüntü)
 - **Algılanan yüzleri ayrı klasöre kaydetme** (`...\YMH219-FaceRecognition\algilanan\`)
 - **Hata yönetimi**: kamera yok / meşgul / izin kapalı, model dosyası eksik veya bozuk, OpenCV yerel kütüphanesi yüklenemedi,
@@ -85,6 +92,7 @@ YMH219-FaceRecognition/
 │   ├── FaceRecognition.Core/        OpenCV'den bağımsız, test edilebilir mantık
 │   │   ├── EtiketKurallari.cs       Etiket (kişi adı) doğrulama
 │   │   ├── TanimaKarari.cs          Mesafe + eşik → etiket / Bilinmiyor, güven yüzdesi
+│   │   ├── YuzHizalama.cs           Göz noktalarından döndürme/ölçek/öteleme geometrisi
 │   │   └── OrnekDeposu.cs           ornekler/<etiket>/001.png klasör yönetimi, etiket Id'leri
 │   └── FaceRecognition/
 │       ├── Services/GoruntuServisi.cs  YuNet / Haar algılama, yüz hazırlama, veri artırma, LBPH eğitim/tahmin, çizim
@@ -107,9 +115,9 @@ gizli görüntü toplama veya kişileri uzaktan izleme amacıyla kullanılmamal�
 
 ## Bilinen Sınırlamalar / Geliştirme Notları
 
-- **LBPH az örnekle sınırlıdır.** Aynı kişinin çok farklı ışık/yaş/renk koşulundaki fotoğrafında mesafe büyür ve sonuç
-  "Bilinmiyor" olur (2. ekran görüntüsü). Kişi başına kameradan farklı açılarla 10+ örnek eklemek doğruluğu belirgin artırır.
-  Eşik düşük tutulduğu için sistem emin olmadığında yanlış isim vermek yerine "Bilinmiyor" der.
+- LBPH, derin öğrenme tabanlı yüz tanıyıcılar kadar güçlü değildir: hizalama ve otomatik örnek toplamaya rağmen aynı
+  kişinin yıllar arayla çekilmiş, çok farklı ışık/renk koşulundaki fotoğraflarında mesafe büyüyebilir. Eşik düşük
+  tutulduğu için sistem emin olmadığında yanlış isim vermek yerine "Bilinmiyor" der.
 - Güven yüzdesi (`100 − mesafe`) gösterim amaçlı basit bir ölçektir, olasılık değildir.
 
 ## Üçüncü Taraf Bileşenler

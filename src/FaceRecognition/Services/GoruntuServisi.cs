@@ -7,7 +7,7 @@ using Size = OpenCvSharp.Size;
 namespace FaceRecognition.Services;
 
 /// <summary>Bir karede bulunan yüz ve (model eğitilmişse) tanıma kararı.</summary>
-public sealed record AlgilananYuz(Rect Bolge, TanimaKarari? Karar);
+public sealed record AlgilananYuz(Rect Bolge, TanimaKarari? Karar, YuzBolgesi? Kaynak = null);
 
 /// <summary>Algılayıcının bulduğu yüz bölgesi; YuNet ayrıca göz konumlarını ve güven skorunu verir.</summary>
 public sealed record YuzBolgesi(Rect Bolge, Point2f? GoruntudeSolGoz = null, Point2f? GoruntudeSagGoz = null, float Skor = 1f);
@@ -143,7 +143,36 @@ public sealed class GoruntuServisi : IDisposable
             flags: HaarDetectionTypes.ScaleImage, minSize: new Size(minKenar, minKenar));
     }
 
-    /// <summary>Yüz bölgesini gri, 100x100, histogramı eşitlenmiş hâle getirir (tanıma girdisi).</summary>
+    /// <summary>
+    /// Tanıma girdisini hazırlar. Göz noktaları varsa (YuNet) yüz <b>hizalanır</b>: gözler yatay olacak şekilde
+    /// döndürülür, gözler arası mesafe sabitlenir ve gözler 100x100 görüntüde hep aynı yere gelir.
+    /// Ardından CLAHE (yerel kontrast eşitleme) uygulanır; yandan gelen ışıkta global eşitlemeden daha kararlıdır.
+    /// </summary>
+    public static Mat YuzuHazirla(Mat renkli, YuzBolgesi yuz)
+    {
+        if (yuz.GoruntudeSolGoz is Point2f sol && yuz.GoruntudeSagGoz is Point2f sag &&
+            YuzHizalama.Hesapla(sol.X, sol.Y, sag.X, sag.Y, YuzBoyutu.Width) is YuzHizalama.Parametreler p)
+        {
+            using var gri = GriyeCevir(renkli);
+            using var m = Cv2.GetRotationMatrix2D(new Point2f((float)p.MerkezX, (float)p.MerkezY), p.Aci, p.Olcek);
+            m.Set(0, 2, m.At<double>(0, 2) + p.HedefX - p.MerkezX);
+            m.Set(1, 2, m.At<double>(1, 2) + p.HedefY - p.MerkezY);
+            var hizali = new Mat();
+            Cv2.WarpAffine(gri, hizali, m, YuzBoyutu, InterpolationFlags.Linear, BorderTypes.Replicate);
+            KontrastEsitle(hizali);
+            return hizali;
+        }
+        return YuzuHazirla(renkli, yuz.Bolge);
+    }
+
+    /// <summary>CLAHE: görüntüyü 8x8 karoya bölüp her karoda ayrı (sınırlı) histogram eşitleme yapar.</summary>
+    private static void KontrastEsitle(Mat gri)
+    {
+        using var clahe = Cv2.CreateCLAHE(2.0, new Size(8, 8));
+        clahe.Apply(gri, gri);
+    }
+
+    /// <summary>Göz noktası yoksa (Haar): yüz kutusu kırpılıp 100x100 gri ve CLAHE'li hâle getirilir.</summary>
     public static Mat YuzuHazirla(Mat renkli, Rect bolge)
     {
         // Haar kutusu saç/arka plan da içerir; kenarlardan biraz kırpılarak yüzün kendisine odaklanılır.
@@ -154,7 +183,7 @@ public sealed class GoruntuServisi : IDisposable
         using var gri = GriyeCevir(kesit);
         var sonuc = new Mat();
         Cv2.Resize(gri, sonuc, YuzBoyutu, interpolation: InterpolationFlags.Area);
-        Cv2.EqualizeHist(sonuc, sonuc);
+        KontrastEsitle(sonuc);
         return sonuc;
     }
 
@@ -164,19 +193,20 @@ public sealed class GoruntuServisi : IDisposable
     public List<AlgilananYuz> Isle(Mat renkli)
     {
         var sonuc = new List<AlgilananYuz>();
-        foreach (var bolge in YuzleriBul(renkli))
+        foreach (var bolgeBilgisi in YuzBolgeleriniBul(renkli))
         {
+            var bolge = bolgeBilgisi.Bolge;
             TanimaKarari? karar = null;
             lock (_modelKilidi)
             {
                 if (_tanici is not null)
                 {
-                    using var yuz = YuzuHazirla(renkli, bolge);
+                    using var yuz = YuzuHazirla(renkli, bolgeBilgisi);
                     _tanici.Predict(yuz, out int id, out double mesafe);
                     karar = TanimaKarari.Olustur(_etiketAdlari.GetValueOrDefault(id), mesafe, Esik);
                 }
             }
-            sonuc.Add(new AlgilananYuz(bolge, karar));
+            sonuc.Add(new AlgilananYuz(bolge, karar, bolgeBilgisi));
         }
         return sonuc;
     }

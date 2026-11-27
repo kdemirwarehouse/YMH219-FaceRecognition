@@ -98,6 +98,24 @@ Test("Örnek deposu: etiket silinir", () =>
 
 try { Directory.Delete(kok, true); } catch { /* önemsiz */ }
 
+Test("Yüz hizalama: eğik gözler yatay hâle gelir ve sabit noktalara oturur", () =>
+{
+    // Sol göz (100,120), sağ göz (160,140): göz çizgisi ~18,4° eğik, mesafe ~63,2 px
+    var p = YuzHizalama.Hesapla(100, 120, 160, 140, 100) ?? throw new Exception("Parametre hesaplanmalı");
+    Dogrula(Math.Abs(p.Aci - 18.435) < 0.01, $"Açı 18,43° olmalı, {p.Aci}");
+    var sol = YuzHizalama.Donustur(p, 100, 120);
+    var sag = YuzHizalama.Donustur(p, 160, 140);
+    Dogrula(Math.Abs(sol.Y - sag.Y) < 1e-6, "Hizalama sonrası gözler aynı yükseklikte olmalı");
+    Dogrula(Math.Abs((sag.X - sol.X) - 40) < 1e-6, "Gözler arası mesafe çıktı genişliğinin %40'ı olmalı");
+    Dogrula(Math.Abs(sol.X - 30) < 1e-6 && Math.Abs(sol.Y - 36) < 1e-6, $"Sol göz (30,36)'ya gelmeli: {sol}");
+});
+
+Test("Geçersiz göz konumlarında hizalama yapılmaz", () =>
+{
+    Dogrula(YuzHizalama.Hesapla(50, 50, 51, 50, 100) is null, "Çok yakın gözler reddedilmeli");
+    Dogrula(YuzHizalama.Hesapla(160, 140, 100, 120, 100) is null, "Ters sıradaki gözler reddedilmeli");
+});
+
 Console.WriteLine();
 Console.WriteLine($"Sonuç: {basarili} başarılı, {basarisiz} başarısız");
 return basarisiz == 0 ? 0 : 1;
