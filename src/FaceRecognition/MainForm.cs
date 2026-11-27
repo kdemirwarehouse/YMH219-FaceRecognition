@@ -143,6 +143,7 @@ public partial class MainForm : Form
         using var cizim = kare.Clone();
         GoruntuServisi.Ciz(cizim, yuzler);
         var bitmap = cizim.ToBitmap();
+        GoruntuServisi.EtiketleriCiz(bitmap, yuzler);   // Türkçe karakterli etiketler
 
         lock (_kareKilidi)
         {

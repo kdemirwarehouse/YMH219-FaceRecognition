@@ -62,6 +62,8 @@ model otomatik yeniden eğitilir. Örnek yüzler kişisel veri olduğu için **d
 - **Kamera Başlat / Durdur** (arka plan görevinde kare okuma, arayüz donmaz) ve **Görüntü Seç** (jpg/png/bmp)
 - Haar Cascade ile yüz algılama; **aynı karede birden fazla yüz** işaretlenir
 - LBPH ile tanıma: tahmin edilen **etiket**, **güven skoru** ve LBPH **mesafesi** gösterilir
+- Görüntü üzerindeki etiketler **GDI+ (Segoe UI)** ile çizilir; OpenCV'nin ASCII yazı tipinin aksine Türkçe karakterler
+  korunur ("Ayşe", "Çağrı", "Gülşen")
 - Ayarlanabilir **tanıma eşiği**: mesafe eşikten büyükse "Bilinmiyor" (ve en yakın etiket bilgi olarak)
 - **Basit eğitim / veri ekleme ekranı**: etiket yazıp örnek ekleme, etiket listesi ve örnek sayıları, etiket silme, örnek klasörünü açma
 - **Veri artırma**: her örnekten ayna, aydınlık/karanlık ve ±8° döndürülmüş kopyalar üretilir (1 örnek → 6 görüntü)
@@ -105,8 +107,6 @@ gizli görüntü toplama veya kişileri uzaktan izleme amacıyla kullanılmamal�
 - **Haar Cascade** önden bakan yüzlerde iyi çalışır; profil yüzleri kaçırabilir, karmaşık desenli arka planlarda nadiren
   yanlış pozitif üretebilir. Daha iyi sonuç için OpenCV DNN (YuNet) yüz algılayıcısı kullanılabilir.
 - Güven yüzdesi (`100 − mesafe`) gösterim amaçlı basit bir ölçektir, olasılık değildir.
-- OpenCV'nin yerleşik yazı tipi Türkçe karakter desteklemediği için görüntü üzerindeki etiketlerde Türkçe harfler sadeleştirilir
-  (ör. "Ayşe" → "Ayse"); sağdaki panelde doğru yazılır.
 
 ## Üçüncü Taraf Bileşenler
 

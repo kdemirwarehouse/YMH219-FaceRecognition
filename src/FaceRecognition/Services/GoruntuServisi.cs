@@ -93,35 +93,42 @@ public sealed class GoruntuServisi : IDisposable
         return sonuc;
     }
 
-    /// <summary>Sonuçları görüntünün üzerine çizer: tanınan yeşil, bilinmeyen kırmızı, model yoksa mavi.</summary>
+    /// <summary>Yüz çerçevelerini çizer: tanınan yeşil, bilinmeyen kırmızı, model yoksa mavi.</summary>
     public static void Ciz(Mat renkli, IEnumerable<AlgilananYuz> yuzler)
     {
         int kalinlik = Math.Max(2, renkli.Width / 300);
-        double yaziOlcegi = Math.Max(0.6, renkli.Width / 900.0);
         foreach (var y in yuzler)
-        {
-            Scalar renk = y.Karar is null ? new Scalar(255, 140, 0)
-                        : y.Karar.Value.Taninan ? new Scalar(40, 200, 40) : new Scalar(40, 40, 230);
-            Cv2.Rectangle(renkli, y.Bolge, renk, kalinlik);
-
-            string yazi = y.Karar is null ? "Yuz" :
-                y.Karar.Value.Taninan ? $"{AsciiYap(y.Karar.Value.Etiket)} %{y.Karar.Value.GuvenYuzde}" : "Bilinmiyor";
-            var boyut = Cv2.GetTextSize(yazi, HersheyFonts.HersheySimplex, yaziOlcegi, kalinlik, out int taban);
-            int x = Math.Clamp(y.Bolge.X, 0, Math.Max(0, renkli.Width - boyut.Width - 10)); // yazı görüntü dışına taşmasın
-            var ust = new Point(x, Math.Max(0, y.Bolge.Y - boyut.Height - taban - 6));
-            Cv2.Rectangle(renkli, new Rect(ust.X, ust.Y, boyut.Width + 10, boyut.Height + taban + 6), renk, -1);
-            Cv2.PutText(renkli, yazi, new Point(ust.X + 5, ust.Y + boyut.Height + 3), HersheyFonts.HersheySimplex,
-                yaziOlcegi, Scalar.White, kalinlik, LineTypes.AntiAlias);
-        }
+            Cv2.Rectangle(renkli, y.Bolge, Renk(y), kalinlik);
     }
 
-    /// <summary>OpenCV'nin yerleşik yazı tipi Türkçe karakter çizemediği için harfleri sadeleştirir.</summary>
-    public static string AsciiYap(string s) => new(s.Select(c => c switch
+    private static Scalar Renk(AlgilananYuz y) =>
+        y.Karar is null ? new Scalar(255, 140, 0)
+        : y.Karar.Value.Taninan ? new Scalar(40, 200, 40) : new Scalar(40, 40, 230);
+
+    /// <summary>
+    /// Etiketleri GDI+ ile Bitmap üzerine yazar. OpenCV'nin yerleşik Hershey yazı tipi yalnızca ASCII çizebildiği
+    /// için ("Ayşe" → "Ay?e") yazılar artık Segoe UI ile, Türkçe karakterler korunarak çizilir.
+    /// </summary>
+    public static void EtiketleriCiz(System.Drawing.Bitmap bitmap, IEnumerable<AlgilananYuz> yuzler)
     {
-        'ç' => 'c', 'Ç' => 'C', 'ğ' => 'g', 'Ğ' => 'G', 'ı' => 'i', 'İ' => 'I',
-        'ö' => 'o', 'Ö' => 'O', 'ş' => 's', 'Ş' => 'S', 'ü' => 'u', 'Ü' => 'U',
-        _ => c < 128 ? c : '?'
-    }).ToArray());
+        using var g = System.Drawing.Graphics.FromImage(bitmap);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        float punto = Math.Max(11f, bitmap.Width / 70f);
+        using var yazi = new System.Drawing.Font("Segoe UI", punto, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Pixel);
+        foreach (var y in yuzler)
+        {
+            string metin = y.Karar is null ? "Yüz"
+                : y.Karar.Value.Taninan ? $"{y.Karar.Value.Etiket}  %{y.Karar.Value.GuvenYuzde}"
+                : TanimaKarari.Bilinmiyor;
+            var olcu = g.MeasureString(metin, yazi);
+            float x = Math.Clamp(y.Bolge.X, 0, Math.Max(0, bitmap.Width - olcu.Width - 4));
+            float ust = Math.Max(0, y.Bolge.Y - olcu.Height - 2);
+            var r = Renk(y);   // OpenCV BGR → GDI+ RGB
+            using var zemin = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(220, (int)r.Val2, (int)r.Val1, (int)r.Val0));
+            g.FillRectangle(zemin, x, ust, olcu.Width + 4, olcu.Height);
+            g.DrawString(metin, yazi, System.Drawing.Brushes.White, x + 2, ust);
+        }
+    }
 
     // ------------------------------------------------------------------ Eğitim
 
