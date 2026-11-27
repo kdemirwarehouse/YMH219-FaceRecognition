@@ -283,6 +283,7 @@ public partial class MainForm : Form
     private void OtomatikToplamaKur()
     {
         btnOrnekEkle.Width = 170;
+        btnOrnekEkle.Text = "Yüzü Örnek Olarak Ekle";
         btnOtomatikTopla = new Button
         {
             Name = "btnOtomatikTopla", Text = $"Otomatik ×{OtomatikOrnekSayisi}",

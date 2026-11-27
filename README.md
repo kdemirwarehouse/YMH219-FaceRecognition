@@ -13,21 +13,24 @@ Nesne Tabanlı Programlama (YMH 219) dersi ek uygulama ödevidir.
 
 ## Ekran Görüntüleri
 
-| İki etiketle eğitilmiş model — aynı karede iki yüz tanınıyor | Modelin hiç görmediği fotoğraf — eşik aşıldığı için "Bilinmiyor" |
-|---|---|
-| ![İki kişi tanıma](docs/screenshots/01-iki-kisi-tanima.png) | ![Eğitilmemiş fotoğraf](docs/screenshots/02-egitilmemis-foto.png) |
+**Tanıma (eğitimde görülmemiş fotoğraf):** model yalnızca her kişinin tek bir portresiyle (Armstrong için iki) eğitildi.
+Kalibrasyon önerilen eşiği **85** olarak ayarladı; Collins **%95** kalibre güvenle tanındı, Armstrong ve Aldrin bu fotoğrafta
+eşiğin üstünde kaldığı için sistem yanlış isim vermek yerine **"Bilinmiyor"** dedi ve en yakın adayı bilgi olarak gösterdi.
+Etiketler GDI+ ile çizildiği için Türkçe karakterler ("Bilinmiyor", "Yüz") doğru görünür.
 
-Ekran görüntülerinde gönüllü yerine **kamuya açık (public domain) NASA portreleri** kullanılmıştır
-(Buzz Aldrin ve Neil Armstrong resmi portreleri, Wikimedia Commons). Model her kişi için **tek bir fotoğraf** + veri artırma
-ile eğitildi. Soldaki görüntüdeki yüzler eğitimde kullanılan fotoğraflardır; sağdaki 1956 tarihli siyah-beyaz fotoğraf
-modelin hiç görmediği bir görüntüdür ve mesafe eşiği (80) aşıldığı için yanlış isim vermek yerine **"Bilinmiyor"** sonucu üretilmiştir.
-Bu, az örnekle çalışan LBPH yönteminin gerçek davranışını gösterir (bkz. Bilinen Sınırlamalar).
+![Tanıma ve kalibre eşik](docs/screenshots/01-tanima-kalibre-esik.png)
+
+| YuNet (DNN) — 3 yüz, sıkı kutular | Haar Cascade — eldiveni de yüz sanıyor (yanlış pozitif) |
+|---|---|
+| ![YuNet](docs/screenshots/02-yunet-algilama.png) | ![Haar](docs/screenshots/03-haar-algilama.png) |
+
+Fotoğraflar: NASA, kamu malı (public domain); depoya eklenmemiştir.
 
 ## Kullanılan Teknolojiler / NuGet Paketleri
 
 - C# 12, .NET 8 (`net8.0-windows`), Windows Forms
 - **NuGet:**
-  - `OpenCvSharp4` — OpenCV'nin .NET sarmalayıcısı (`Mat`, `CascadeClassifier`, `VideoCapture`, `OpenCvSharp.Face.LBPHFaceRecognizer`)
+  - `OpenCvSharp4` — OpenCV'nin .NET sarmalayıcısı (`Mat`, `FaceDetectorYN` (YuNet DNN), `CascadeClassifier`, `VideoCapture`, `CLAHE`, `OpenCvSharp.Face.LBPHFaceRecognizer`)
   - `OpenCvSharp4.runtime.win` — Windows için yerel OpenCV kütüphaneleri (contrib/face modülü dahil)
   - `OpenCvSharp4.Extensions` — `Mat` → `Bitmap` dönüşümü (PictureBox için)
 - **Modeller:** `src/FaceRecognition/Models/`
